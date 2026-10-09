@@ -1,0 +1,16 @@
+doc-markdown (hermes-plugin-doc-markdown)
+Copyright (c) 2026 TakeshiTGAL
+Licensed under the MIT License (see LICENSE).
+
+Microsoft and MarkItDown are trademarks of the Microsoft group of companies.
+
+This product is built on Microsoft's MarkItDown (MIT):
+
+  microsoft/markitdown  https://github.com/microsoft/markitdown
+  Copyright (c) Microsoft Corporation.
+  Licensed under the MIT License.
+
+MarkItDown is pulled in as a Python dependency
+(`markitdown[pdf,docx,pptx,xlsx,xls]`) at runtime. No MarkItDown source files
+are vendored in this repository. See that project's LICENSE for the full MIT
+text from Microsoft Corporation.

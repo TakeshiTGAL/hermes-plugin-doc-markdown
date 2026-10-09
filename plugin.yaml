@@ -1,0 +1,81 @@
+name: doc-markdown
+version: 0.1.0
+manifest_version: 2
+requires_hermes: ">=0.21.4"
+description: >
+  Convert one local file to Markdown with doc_convert, built on Microsoft's MarkItDown (MIT).
+  Microsoft and MarkItDown are trademarks of the Microsoft group of companies.
+  After realpath, local convert may read any other absolute path with an
+  allowlisted extension that the Hermes process can open. It refuses the
+  Hermes home, any path component that starts with '.', a relative path, an
+  http, https, or file URL in any letter case, a missing file, and a
+  directory, plus size and type checks. This is not a chroot or a user-home
+  sandbox. `.xls` is best-effort and may return conversion_failed.
+  A zip archive is refused before conversion when the bytes begin with
+  PK\x03\x04, PK\x05\x06, or PK\x07\x08, or when the file is a readable zip.
+  A .docx, .xlsx, or .pptx is passed only to that format's converter.
+  After the worker loads, conversion stops at convert_timeout_seconds
+  (default 8) or at 922746880 bytes of memory. Loading stops at 60 seconds.
+  That worker is not a sandbox for a hostile file. v0.1 does not register
+  a web extract provider. Linux and macOS only. Windows was not tested.
+author: TakeshiTGAL
+kind: backend
+license: MIT
+homepage: https://github.com/TakeshiTGAL/hermes-plugin-doc-markdown
+platforms:
+  - linux
+  - macos
+tags: [markdown, documents, pdf, office, tools]
+
+python_dependencies:
+  # Floor 0.1.0 is the markitdown.converters layout this plugin imports.
+  # Pdf, Docx, Xlsx, Xls, Pptx, Html, and PlainText class names also
+  # exist in 0.0.2 as one module. CsvConverter does not. Local files call one
+  # converter class. Those imports and StreamInfo charset on 0.1.0 were
+  # not executed here.
+  # Extras: pdf, docx, pptx, xlsx, xls. HTML/CSV/TXT use MarkItDown core.
+  # Not included by default: youtube-transcription, audio-transcription,
+  # az-doc-intel, az-content-understanding (network / cloud / paid paths).
+  - "markitdown[pdf,docx,pptx,xlsx,xls]>=0.1.0,<0.2"
+
+provides_tools:
+  - doc_convert
+provides_hooks: []
+
+config_schema:
+  max_file_bytes:
+    type: int
+    default: 20971520
+    label: Max local file size (bytes)
+    description: >
+      Refuse local files larger than this (default 20 MiB, 20971520 bytes).
+      A tool argument cannot raise this cap. A .docx, .pptx, or .xlsx that
+      contains that format's package part is also refused when the larger
+      of each member's central-directory file_size and its local-header
+      uncompressed size (when that header stores one) exceeds this cap
+      (error_type uncompressed_too_large), without extracting members.
+      If those sizes disagree and the larger sum is within the cap, the
+      file is zip_refused.
+      A zip archive is refused before conversion.
+  convert_timeout_seconds:
+    type: int
+    default: 8
+    label: Conversion time limit (seconds)
+    description: >
+      Wall-clock limit for one conversion after the worker has loaded
+      its converters (default 8 seconds). At this limit the plugin stops
+      that process group and returns error_type conversion_timeout.
+      A worker that does not finish loading is stopped at 60 seconds.
+      Separately, the worker is stopped at 922746880 bytes of memory
+      (error_type conversion_memory). That cap is not a config key.
+      The worker is not a sandbox for a hostile file.
+  max_output_chars:
+    type: int
+    default: 200000
+    label: Max Markdown characters returned
+    description: >
+      Local doc_convert cuts Markdown at this length (default 200000). If the
+      caller passes max_chars, the cut is the smaller of that value and this
+      setting; a larger max_chars is not an error. The JSON result sets
+      truncated to true when clipped.
+      Hermes applies its own store and display caps.
