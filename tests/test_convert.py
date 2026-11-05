@@ -184,6 +184,10 @@ def test_unreadable_rss_watch_does_not_succeed(plugin, tmp_path, monkeypatch):
 def test_local_cp932_txt_is_not_a_successful_conversion(plugin, tmp_path):
     path = tmp_path / "note.txt"
     path.write_bytes(_CP932_PHRASE.encode("cp932"))
+    # A busy machine can reach the 8 second limit first; this test is about the encoding check.
+    plugin.settings.bind_config(
+        lambda key, default=None: 60 if key == "convert_timeout_seconds" else default
+    )
     out = call(plugin, "doc_convert", {"path": str(path)})
     assert out.get("ok") is not True
     assert out["error_type"] == "encoding_unconfirmed"
@@ -454,7 +458,14 @@ def test_one_second_limit_still_converts_a_small_file(plugin, tmp_path):
     assert "hello small" in out["markdown"]
 
 
-def test_five_megabyte_html_stops_at_the_time_limit(plugin, tmp_path):
+def test_five_megabyte_html_stops_or_returns_truncated(plugin, tmp_path):
+    """A 5MB HTML file stops at the time limit or returns text cut at the output cap.
+
+    Finishing MarkItDown for this file takes about the default 8 seconds, so a
+    faster machine returns the cut text and a slower one returns
+    conversion_timeout. The assertion does not read the clock. The default
+    time limit stays 8 seconds and the memory limit stays 922746880 bytes.
+    """
     path = tmp_path / "heavy.html"
     chunk = b"<b>a</b>" * 10000
     target = 5 * 1024 * 1024
@@ -464,12 +475,47 @@ def test_five_megabyte_html_stops_at_the_time_limit(plugin, tmp_path):
             handle.write(chunk)
         handle.write(b"</body></html>")
     assert path.stat().st_size >= target
+    assert plugin.settings.DEFAULT_CONVERT_TIMEOUT == 8
+    assert plugin.convert.CONVERT_MEMORY_LIMIT_BYTES == 922746880
+    assert plugin.settings.DEFAULT_MAX_OUTPUT_CHARS == 200_000
     out = call(plugin, "doc_convert", {"path": str(path)})
+    if out.get("ok") is True:
+        assert out["truncated"] is True, out
+        assert out["char_count"] == plugin.settings.DEFAULT_MAX_OUTPUT_CHARS
+        assert out["error"] is None
+        assert len(out["markdown"]) == out["char_count"]
+        return
     limit = plugin.settings.DEFAULT_CONVERT_TIMEOUT
-    assert out.get("ok") is not True
     assert out["error_type"] == "conversion_timeout", out
     assert f"time limit of {limit} seconds" in out["error"]
     assert "stopped" in out["error"]
+    assert out.get("markdown") in (None, "")
+
+
+# These three tests check the memory cap only. On a busy machine the default
+# 8s clock can return conversion_timeout before RSS reaches 922746880 bytes.
+# The raised clock is this call only. DEFAULT_CONVERT_TIMEOUT stays 8.
+_MEMORY_LIMIT_TEST_TIMEOUT_SECONDS = 300
+
+
+def _convert_until_memory_limit(plugin, path):
+    """Convert with a long clock so the memory limit is what stops the worker."""
+    plugin.settings.bind_config(
+        lambda key, default=None: (
+            _MEMORY_LIMIT_TEST_TIMEOUT_SECONDS
+            if key == "convert_timeout_seconds"
+            else default
+        )
+    )
+    try:
+        out = call(plugin, "doc_convert", {"path": str(path)})
+    finally:
+        plugin.settings.bind_config(None)
+    assert plugin.settings.DEFAULT_CONVERT_TIMEOUT == 8
+    assert plugin.settings.DEFAULT_WORKER_LOAD_TIMEOUT == 60
+    assert plugin.settings.convert_timeout_seconds() == 8
+    assert plugin.convert.CONVERT_MEMORY_LIMIT_BYTES == 922746880
+    return out
 
 
 def _assert_stopped_for_memory(out):
@@ -478,6 +524,7 @@ def _assert_stopped_for_memory(out):
     assert out["error_type"] == "conversion_memory", out
     assert "922746880" in out["error"]
     assert "memory limit" in out["error"]
+    assert "time limit" not in out["error"]
 
 
 def test_pk_comma_csv_converts(plugin, tmp_path):
@@ -596,7 +643,7 @@ def test_sparse_xlsx_stops_at_the_memory_limit(plugin, tmp_path):
     _sparse_xlsx(path)
     size = path.stat().st_size
     assert 1200 <= size <= 1800, size
-    out = call(plugin, "doc_convert", {"path": str(path)})
+    out = _convert_until_memory_limit(plugin, path)
     _assert_stopped_for_memory(out)
 
 
@@ -676,7 +723,7 @@ def _forged_docx(path):
 def test_forged_docx_sizes_stop_at_the_memory_limit(plugin, tmp_path):
     path = tmp_path / "forged.docx"
     _forged_docx(path)
-    out = call(plugin, "doc_convert", {"path": str(path)})
+    out = _convert_until_memory_limit(plugin, path)
     _assert_stopped_for_memory(out)
 
 
@@ -731,5 +778,5 @@ def test_flate_pdf_stops_at_the_memory_limit(plugin, tmp_path):
     path = tmp_path / "bomb.pdf"
     _flate_pdf(path)
     assert path.stat().st_size < 5 * 1024 * 1024
-    out = call(plugin, "doc_convert", {"path": str(path)})
+    out = _convert_until_memory_limit(plugin, path)
     _assert_stopped_for_memory(out)

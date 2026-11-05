@@ -41,6 +41,7 @@ _OFFICE_PART = {
 }
 
 # One converter class per extension. The archive converter is never imported.
+# Each module name below is fixed. Nothing is imported under a computed name.
 _CONVERTER_SPEC = {
     ".docx": ("markitdown.converters._docx_converter", "DocxConverter"),
     ".xlsx": ("markitdown.converters._xlsx_converter", "XlsxConverter"),
@@ -54,6 +55,23 @@ _CONVERTER_SPEC = {
     ".txt": ("markitdown.converters._plain_text_converter", "PlainTextConverter"),
     ".md": ("markitdown.converters._plain_text_converter", "PlainTextConverter"),
 }
+
+def _import_converter_module(module_name: str):
+    if module_name == "markitdown.converters._docx_converter":
+        return importlib.import_module("markitdown.converters._docx_converter")
+    if module_name == "markitdown.converters._xlsx_converter":
+        return importlib.import_module("markitdown.converters._xlsx_converter")
+    if module_name == "markitdown.converters._pptx_converter":
+        return importlib.import_module("markitdown.converters._pptx_converter")
+    if module_name == "markitdown.converters._pdf_converter":
+        return importlib.import_module("markitdown.converters._pdf_converter")
+    if module_name == "markitdown.converters._html_converter":
+        return importlib.import_module("markitdown.converters._html_converter")
+    if module_name == "markitdown.converters._csv_converter":
+        return importlib.import_module("markitdown.converters._csv_converter")
+    if module_name == "markitdown.converters._plain_text_converter":
+        return importlib.import_module("markitdown.converters._plain_text_converter")
+    raise ImportError(module_name)
 
 _MIME = {
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -286,7 +304,7 @@ def _refuse_before_convert(real: str, limit_bytes: int) -> str:
 def _load_converter(ext: str):
     module_name, class_name = _CONVERTER_SPEC[ext]
     try:
-        module = importlib.import_module(module_name)
+        module = _import_converter_module(module_name)
         cls = getattr(module, class_name)
     except (ImportError, AttributeError) as exc:
         raise _dependency_missing(type(exc).__name__) from None
